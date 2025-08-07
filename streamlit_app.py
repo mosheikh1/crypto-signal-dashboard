@@ -26,53 +26,53 @@ data = get_data(symbol, interval)
 
 if data.empty:
     st.error("❌ No data found for selected symbol/timeframe.")
+elif 'Close' not in data.columns:
+    st.error("❌ 'Close' column not found in data.")
 else:
-    if 'Close' not in data.columns:
-        st.error("❌ 'Close' column not found in data.")
-    else:
-        try:
-            # Prepare clean Close price series
-            close_series = data['Close'].dropna().astype(float).reset_index(drop=True)
+    try:
+        # Convert to 1D Series properly
+        close_series = data['Close'].dropna()
+        close_series = pd.Series(close_series.values.flatten(), index=close_series.index)
 
-            if len(close_series) < 50:
-                st.error("❌ Not enough valid 'Close' data points to calculate indicators.")
+        if len(close_series) < 50:
+            st.error("❌ Not enough data points to calculate indicators.")
+        else:
+            # Calculate RSI and MACD
+            rsi = ta.momentum.RSIIndicator(close=close_series).rsi()
+            macd = ta.trend.MACD(close=close_series)
+            macd_line = macd.macd()
+            signal_line = macd.macd_signal()
+
+            # Merge into the original dataframe
+            data['RSI'] = rsi
+            data['MACD'] = macd_line
+            data['Signal'] = signal_line
+            data.dropna(subset=['RSI', 'MACD', 'Signal'], inplace=True)
+
+            if data.empty:
+                st.error("❌ No data left after calculating indicators.")
             else:
-                # Calculate RSI
-                rsi_indicator = ta.momentum.RSIIndicator(close=close_series)
-                data.loc[close_series.index, 'RSI'] = rsi_indicator.rsi()
+                latest = data.iloc[-1]
 
-                # Calculate MACD and Signal Line
-                macd_indicator = ta.trend.MACD(close=close_series)
-                data.loc[close_series.index, 'MACD'] = macd_indicator.macd()
-                data.loc[close_series.index, 'Signal'] = macd_indicator.macd_signal()
+                def generate_signal(row):
+                    if row["MACD"] > row["Signal"] and row["RSI"] < 70:
+                        return "📈 BUY (LONG)"
+                    elif row["MACD"] < row["Signal"] and row["RSI"] > 30:
+                        return "📉 SELL (SHORT)"
+                    else:
+                        return "⏸️ HOLD"
 
-                # Drop rows where indicators are NaN
-                data.dropna(subset=['RSI', 'MACD', 'Signal'], inplace=True)
+                signal = generate_signal(latest)
 
-                if data.empty:
-                    st.error("❌ No valid data after indicator calculation.")
-                else:
-                    latest = data.iloc[-1]
+                st.subheader(f"Signal for {symbol} ({interval})")
+                st.metric("Price", f"${latest['Close']:.2f}")
+                st.metric("RSI", f"{latest['RSI']:.2f}")
+                st.metric("MACD", f"{latest['MACD']:.2f}")
+                st.metric("Signal Line", f"{latest['Signal']:.2f}")
+                st.success(signal)
 
-                    def generate_signal(row):
-                        if row["MACD"] > row["Signal"] and row["RSI"] < 70:
-                            return "📈 BUY (LONG)"
-                        elif row["MACD"] < row["Signal"] and row["RSI"] > 30:
-                            return "📉 SELL (SHORT)"
-                        else:
-                            return "⏸️ HOLD"
+                st.line_chart(data[['Close', 'RSI']])
 
-                    signal = generate_signal(latest)
-
-                    st.subheader(f"Signal for {symbol} ({interval})")
-                    st.metric("Price", f"${latest['Close']:.2f}")
-                    st.metric("RSI", f"{latest['RSI']:.2f}")
-                    st.metric("MACD", f"{latest['MACD']:.2f}")
-                    st.metric("Signal Line", f"{latest['Signal']:.2f}")
-                    st.success(signal)
-
-                    st.line_chart(data[['Close', 'RSI']])
-
-        except Exception as e:
-            st.error(f"Error calculating indicators: {e}")
-            st.write("Make sure your data contains a valid 'Close' column with numeric values.")
+    except Exception as e:
+        st.error(f"Error calculating indicators: {e}")
+        st.write("Make sure your data contains a valid 'Close' column with numeric values.")
