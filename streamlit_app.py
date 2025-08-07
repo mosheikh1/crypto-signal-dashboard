@@ -28,7 +28,34 @@ def get_data(symbol, interval):
 data = get_data(symbol, interval)
 
 # Calculate indicators
-data['RSI'] = ta.momentum.RSIIndicator(data['Close']).rsi()
+if not data.empty and data['Close'].isnull().sum() == 0:
+    data['RSI'] = ta.momentum.RSIIndicator(data['Close']).rsi()
+    macd = ta.trend.MACD(data['Close'])
+    data['MACD'] = macd.macd()
+    data['Signal'] = macd.macd_signal()
+    latest = data.iloc[-1]
+
+    def generate_signal(latest):
+        if latest["MACD"] > latest["Signal"] and latest["RSI"] < 70:
+            return "📈 BUY (LONG)"
+        elif latest["MACD"] < latest["Signal"] and latest["RSI"] > 30:
+            return "📉 SELL (SHORT)"
+        else:
+            return "⏸️ HOLD"
+
+    signal = generate_signal(latest)
+
+    st.subheader(f"Current Signal for {symbol}")
+    st.metric("Price", f"${latest['Close']:.2f}")
+    st.metric("RSI", f"{latest['RSI']:.2f}")
+    st.metric("MACD", f"{latest['MACD']:.2f}")
+    st.metric("Signal Line", f"{latest['Signal']:.2f}")
+    st.success(signal)
+
+    st.line_chart(data[['Close', 'RSI']].dropna())
+else:
+    st.error("Failed to load valid data. Try another pair or interval.")
+
 macd = ta.trend.MACD(data['Close'])
 data['MACD'] = macd.macd()
 data['Signal'] = macd.macd_signal()
