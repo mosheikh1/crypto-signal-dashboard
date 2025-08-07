@@ -30,41 +30,49 @@ else:
     if 'Close' not in data.columns:
         st.error("❌ 'Close' column not found in data.")
     else:
-        # Check if we have enough data points
-        if data['Close'].dropna().shape[0] < 50:
-            st.error("❌ Not enough data to calculate indicators. Try another timeframe or symbol.")
-        else:
-            # Calculate indicators on full Close series
-            rsi_indicator = ta.momentum.RSIIndicator(close=data['Close'])
-            data['RSI'] = rsi_indicator.rsi()
+        try:
+            # Prepare clean Close price series
+            close_series = data['Close'].dropna().astype(float).reset_index(drop=True)
 
-            macd_indicator = ta.trend.MACD(close=data['Close'])
-            data['MACD'] = macd_indicator.macd()
-            data['Signal'] = macd_indicator.macd_signal()
-
-            # Drop NaNs created by indicator calculation
-            data.dropna(inplace=True)
-
-            if data.empty:
-                st.error("❌ No valid data after indicator calculation.")
+            if len(close_series) < 50:
+                st.error("❌ Not enough valid 'Close' data points to calculate indicators.")
             else:
-                latest = data.iloc[-1]
+                # Calculate RSI
+                rsi_indicator = ta.momentum.RSIIndicator(close=close_series)
+                data.loc[close_series.index, 'RSI'] = rsi_indicator.rsi()
 
-                def generate_signal(row):
-                    if row["MACD"] > row["Signal"] and row["RSI"] < 70:
-                        return "📈 BUY (LONG)"
-                    elif row["MACD"] < row["Signal"] and row["RSI"] > 30:
-                        return "📉 SELL (SHORT)"
-                    else:
-                        return "⏸️ HOLD"
+                # Calculate MACD and Signal Line
+                macd_indicator = ta.trend.MACD(close=close_series)
+                data.loc[close_series.index, 'MACD'] = macd_indicator.macd()
+                data.loc[close_series.index, 'Signal'] = macd_indicator.macd_signal()
 
-                signal = generate_signal(latest)
+                # Drop rows where indicators are NaN
+                data.dropna(subset=['RSI', 'MACD', 'Signal'], inplace=True)
 
-                st.subheader(f"Signal for {symbol} ({interval})")
-                st.metric("Price", f"${latest['Close']:.2f}")
-                st.metric("RSI", f"{latest['RSI']:.2f}")
-                st.metric("MACD", f"{latest['MACD']:.2f}")
-                st.metric("Signal Line", f"{latest['Signal']:.2f}")
-                st.success(signal)
+                if data.empty:
+                    st.error("❌ No valid data after indicator calculation.")
+                else:
+                    latest = data.iloc[-1]
 
-                st.line_chart(data[['Close', 'RSI']])
+                    def generate_signal(row):
+                        if row["MACD"] > row["Signal"] and row["RSI"] < 70:
+                            return "📈 BUY (LONG)"
+                        elif row["MACD"] < row["Signal"] and row["RSI"] > 30:
+                            return "📉 SELL (SHORT)"
+                        else:
+                            return "⏸️ HOLD"
+
+                    signal = generate_signal(latest)
+
+                    st.subheader(f"Signal for {symbol} ({interval})")
+                    st.metric("Price", f"${latest['Close']:.2f}")
+                    st.metric("RSI", f"{latest['RSI']:.2f}")
+                    st.metric("MACD", f"{latest['MACD']:.2f}")
+                    st.metric("Signal Line", f"{latest['Signal']:.2f}")
+                    st.success(signal)
+
+                    st.line_chart(data[['Close', 'RSI']])
+
+        except Exception as e:
+            st.error(f"Error calculating indicators: {e}")
+            st.write("Make sure your data contains a valid 'Close' column with numeric values.")
