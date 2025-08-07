@@ -29,10 +29,10 @@ data = get_data(symbol, interval)
 if 'Close' not in data.columns:
     st.error("❌ 'Close' column not found in the data.")
 else:
-    close_data = data['Close']
+    close_data = data['Close'].copy()
 
     # Make sure there's enough valid data
-    if close_data.isnull().sum() > 0:
+    if int(close_data.isnull().sum()) > 0:
         st.warning("⚠️ Some missing values detected in price data. Attempting to clean...")
         close_data = close_data.fillna(method='ffill')
 
