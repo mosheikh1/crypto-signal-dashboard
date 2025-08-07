@@ -29,17 +29,17 @@ data = get_data(symbol, interval)
 
 # Calculate indicators
 if 'Close' in data.columns:
-    close_prices = data['Close'].dropna()
-
-    if not close_prices.empty:
-        # Calculate indicators
-        rsi_indicator = ta.momentum.RSIIndicator(close=close_prices)
+    # Ensure Close column has enough data
+    if data['Close'].notnull().sum() > 50:
+        # Calculate RSI and MACD
+        rsi_indicator = ta.momentum.RSIIndicator(close=data['Close'])
         data['RSI'] = rsi_indicator.rsi()
 
-        macd_indicator = ta.trend.MACD(close=close_prices)
+        macd_indicator = ta.trend.MACD(close=data['Close'])
         data['MACD'] = macd_indicator.macd()
         data['Signal'] = macd_indicator.macd_signal()
 
+        # Drop rows with NaNs created during indicator calculations
         data.dropna(inplace=True)
 
         if not data.empty:
@@ -55,6 +55,7 @@ if 'Close' in data.columns:
 
             signal = generate_signal(latest)
 
+            # Display
             st.subheader(f"Current Signal for {symbol}")
             st.metric("Price", f"${latest['Close']:.2f}")
             st.metric("RSI", f"{latest['RSI']:.2f}")
@@ -64,12 +65,11 @@ if 'Close' in data.columns:
 
             st.line_chart(data[['Close', 'RSI']])
         else:
-            st.error("📉 Not enough data after indicator calculation.")
+            st.error("⚠️ Not enough data after indicator calculation.")
     else:
-        st.error("⚠️ 'Close' prices are missing or all NaN.")
+        st.error("⚠️ Not enough valid price data to calculate indicators.")
 else:
-    st.error("⚠️ No 'Close' column found in data.")
-
+    st.error("❌ 'Close' column missing in data.")
 
 macd = ta.trend.MACD(data['Close'])
 data['MACD'] = macd.macd()
