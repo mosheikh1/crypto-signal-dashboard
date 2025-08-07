@@ -5,74 +5,79 @@ import ta
 
 st.set_page_config(page_title="Crypto Signal Dashboard", layout="centered")
 
-st.title("📈 Crypto Futures Signal Dashboard")
-st.markdown("Real-time BUY/SELL signals using RSI & MACD indicators.")
+st.title("📊 Crypto Futures Signal Dashboard")
+st.markdown("Uses **RSI** and **MACD** to generate Long/Short signals for scalping & futures trading.")
 
-# Sidebar - user selects crypto pair and timeframe
-symbol = st.sidebar.selectbox("Select Crypto Pair", ["BTC-USD", "ETH-USD", "SOL-USD"])
-interval = st.sidebar.selectbox("Select Timeframe", ["1h", "4h", "1d"])
-st.sidebar.markdown("⚠️ Data from Yahoo Finance")
+# --- Sidebar for controls
+symbol = st.sidebar.selectbox("Select Crypto Pair", ["BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD", "XRP-USD"])
+interval = st.sidebar.selectbox("Timeframe", ["1h", "4h", "1d"])
+st.sidebar.caption("⚠️ Source: Yahoo Finance")
 
+# --- Function to load data
 @st.cache_data(ttl=300)
-def get_data(symbol, interval):
+def load_data(symbol, interval):
     if interval == "1h":
-        return yf.download(tickers=symbol, period="7d", interval="1h")
+        data = yf.download(tickers=symbol, period="7d", interval="1h")
     elif interval == "4h":
-        return yf.download(tickers=symbol, period="30d", interval="4h")
-    else:  # daily
-        return yf.download(tickers=symbol, period="90d", interval="1d")
+        data = yf.download(tickers=symbol, period="30d", interval="4h")
+    else:
+        data = yf.download(tickers=symbol, period="90d", interval="1d")
+    return data
 
-data = get_data(symbol, interval)
+data = load_data(symbol, interval)
 
-if data.empty:
-    st.error("❌ No data found for selected symbol/timeframe.")
-elif 'Close' not in data.columns:
-    st.error("❌ 'Close' column not found in data.")
+# --- Check data
+if data.empty or "Close" not in data.columns:
+    st.error("❌ Failed to fetch valid data.")
 else:
     try:
-        # Convert to 1D Series properly
-        close_series = data['Close'].dropna()
-        close_series = pd.Series(close_series.values.flatten(), index=close_series.index)
+        close = data["Close"].dropna()
 
-        if len(close_series) < 50:
-            st.error("❌ Not enough data points to calculate indicators.")
-        else:
-            # Calculate RSI and MACD
-            rsi = ta.momentum.RSIIndicator(close=close_series).rsi()
-            macd = ta.trend.MACD(close=close_series)
-            macd_line = macd.macd()
-            signal_line = macd.macd_signal()
+        # Ensure close is 1D Series
+        close = pd.Series(close.values, index=close.index)
 
-            # Merge into the original dataframe
-            data['RSI'] = rsi
-            data['MACD'] = macd_line
-            data['Signal'] = signal_line
-            data.dropna(subset=['RSI', 'MACD', 'Signal'], inplace=True)
+        # --- Compute RSI and MACD
+        rsi = ta.momentum.RSIIndicator(close=close).rsi()
+        macd_calc = ta.trend.MACD(close=close)
+        macd_line = macd_calc.macd()
+        signal_line = macd_calc.macd_signal()
 
-            if data.empty:
-                st.error("❌ No data left after calculating indicators.")
+        # Align lengths
+        indicators = pd.DataFrame({
+            "RSI": rsi,
+            "MACD": macd_line,
+            "Signal": signal_line
+        }, index=close.index)
+
+        data = data.join(indicators)
+
+        # Drop missing
+        data.dropna(inplace=True)
+
+        # --- Get latest signal
+        latest = data.iloc[-1]
+
+        def get_signal(row):
+            if row["MACD"] > row["Signal"] and row["RSI"] < 70:
+                return "📈 BUY (LONG)"
+            elif row["MACD"] < row["Signal"] and row["RSI"] > 30:
+                return "📉 SELL (SHORT)"
             else:
-                latest = data.iloc[-1]
+                return "⏸️ HOLD"
 
-                def generate_signal(row):
-                    if row["MACD"] > row["Signal"] and row["RSI"] < 70:
-                        return "📈 BUY (LONG)"
-                    elif row["MACD"] < row["Signal"] and row["RSI"] > 30:
-                        return "📉 SELL (SHORT)"
-                    else:
-                        return "⏸️ HOLD"
+        signal = get_signal(latest)
 
-                signal = generate_signal(latest)
+        # --- UI Display
+        st.subheader(f"{symbol} - {interval} Signal")
+        st.metric("Current Price", f"${latest['Close']:.2f}")
+        st.metric("RSI", f"{latest['RSI']:.2f}")
+        st.metric("MACD", f"{latest['MACD']:.4f}")
+        st.metric("Signal Line", f"{latest['Signal']:.4f}")
+        st.success(f"**{signal}**")
 
-                st.subheader(f"Signal for {symbol} ({interval})")
-                st.metric("Price", f"${latest['Close']:.2f}")
-                st.metric("RSI", f"{latest['RSI']:.2f}")
-                st.metric("MACD", f"{latest['MACD']:.2f}")
-                st.metric("Signal Line", f"{latest['Signal']:.2f}")
-                st.success(signal)
-
-                st.line_chart(data[['Close', 'RSI']])
+        # --- Charts
+        st.line_chart(data[["Close"]], use_container_width=True)
+        st.line_chart(data[["RSI"]], use_container_width=True)
 
     except Exception as e:
         st.error(f"Error calculating indicators: {e}")
-        st.write("Make sure your data contains a valid 'Close' column with numeric values.")
