@@ -28,13 +28,18 @@ def get_data(symbol, interval):
 data = get_data(symbol, interval)
 
 # Calculate indicators
-if not data.empty and data['Close'].isnull().sum() == 0:
+if 'Close' in data.columns and not data['Close'].isnull().any():
+    # Calculate indicators
     data['RSI'] = ta.momentum.RSIIndicator(data['Close']).rsi()
     macd = ta.trend.MACD(data['Close'])
     data['MACD'] = macd.macd()
     data['Signal'] = macd.macd_signal()
+
+    # Drop rows with NaNs created during indicator calculation
+    data.dropna(inplace=True)
     latest = data.iloc[-1]
 
+    # Signal logic
     def generate_signal(latest):
         if latest["MACD"] > latest["Signal"] and latest["RSI"] < 70:
             return "📈 BUY (LONG)"
@@ -45,6 +50,7 @@ if not data.empty and data['Close'].isnull().sum() == 0:
 
     signal = generate_signal(latest)
 
+    # Display
     st.subheader(f"Current Signal for {symbol}")
     st.metric("Price", f"${latest['Close']:.2f}")
     st.metric("RSI", f"{latest['RSI']:.2f}")
@@ -52,9 +58,9 @@ if not data.empty and data['Close'].isnull().sum() == 0:
     st.metric("Signal Line", f"{latest['Signal']:.2f}")
     st.success(signal)
 
-    st.line_chart(data[['Close', 'RSI']].dropna())
+    st.line_chart(data[['Close', 'RSI']])
 else:
-    st.error("Failed to load valid data. Try another pair or interval.")
+    st.error("⚠️ Could not load valid price data. Try another symbol or timeframe.")
 
 macd = ta.trend.MACD(data['Close'])
 data['MACD'] = macd.macd()
